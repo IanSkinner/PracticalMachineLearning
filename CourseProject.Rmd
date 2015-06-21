@@ -1,0 +1,103 @@
+---
+title: "Predicting Manner of Exercise from Monitoring Metrics  "
+author: "Ian Skinner"
+date: "Friday, June 19, 2015"
+output: html_document
+---
+
+###Background
+
+The purpose of this project is to try and predict based on accelerometer data what the class of activity was based on the provided training data. The classes are as follows for the exercise of Unilateral Dumbbell Biceps Curl:
+
+- Exactly according to the specification (Class A)
+- Throwing the elbows to the front (Class B)
+- Lifting the dumbbell only halfway (Class C)
+- Lowering the dumbbell only halfway (Class D)
+- Throwing the hips to the front (Class E).
+
+We will take the provided training data set and split this into a further test and training set for a model build and cross validation. Once a satisfactory model is built this will be applied to the 20 test cases to generate results for evaluation.
+
+###Pre Prerequisites
+
+Load required libraries and start parallel processing. I will also set seed for reproducibility
+
+```{r}
+library(caret)
+library(randomForest)
+library(doParallel)
+library(ggplot2)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+set.seed(12345)
+```
+
+###Load and refine the data
+
+Data is assumed to be downloaded and held in a *data* subdirectory
+
+```{r}
+rawdata <- read.csv("./data/pml-training.csv", na.strings=c("NA",""), header=TRUE)
+assessdata <- read.csv("./data/pml-testing.csv", na.strings=c("NA",""), header=TRUE)
+```
+On inspection of the data the first seven columns can be removed as they are informational and not suitable for prediction 
+
+```{r}
+names(rawdata[,c(1:7)])
+rawdata <- rawdata[,-c(1:7)]
+```
+
+The remaining variables are either well populated are almost entirely NA in their population. I now go on to remove all columns where NA occurs in more than 95% of rows as these will not be valuable for prediction.
+
+```{r}
+qplot(colSums(is.na(rawdata)))
+rawdata <- rawdata[,colSums(is.na(rawdata))<nrow(rawdata)*0.95]
+```
+###Build cross validation datasets 
+
+The next step will be to create a train and test dataset to allow cross validation and out of sample analysis. Due to reasonable volume size I have decided on a 60%/40% split
+
+```{r}
+inTrain = createDataPartition(y=rawdata$classe, p=0.6, list=FALSE)
+training = rawdata[inTrain,]
+testing = rawdata[-inTrain,]
+```
+
+###Model Build
+
+I have chosen to use a Random Forest method to build a model against the test dataset as this generally provides good prediction and we have a high number of variables
+
+```{r}
+modfit <-randomForest(classe~., data=training)
+
+```
+
+I will then cross validate against the data by predicting on the test dataset and assessing the confusion matrix
+
+```{r}
+pred<-predict(modfit,newdata=testing)
+confusionMatrix(pred, testing$classe)
+```
+
+Through the cross validation we can see that the accuracy of the model on the test data is 99.5% with an out of sample error rate of .5%
+
+###Submission
+
+Finally we take our validated model and apply it to the test data provided for assessment, and output
+
+```{r}
+answers<-predict(modfit,newdata=assessdata)
+
+answers
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
+
+
